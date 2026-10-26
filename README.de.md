@@ -103,9 +103,9 @@ Existiert der Datenpunkt bereits mit einem Wert, wird direkt damit gerechnet. Mi
 - Das Script ist nur mit HmIP-Thermostaten gedacht und wurde nicht mit allen Gerätevarianten getestet.
 - Kommentare im Script und Logmeldungen sind auf Deutsch.
 
-## Hintergrund
+## Danksagung
 
-Die Idee, Thermostate per Offset an einen externen Sensor anzugleichen, stammt aus der ioBroker-Community. Dieses Projekt ist eine **eigenständige Neuimplementierung** und kein Fork oder Derivat eines bestehenden Scripts.
+Die Idee, Thermostate per Offset an einen externen Sensor anzugleichen, stammt aus dem Script „Einbindung Fremd-Temperatur-Sensoren in Homematic mittels Offset-Setzen“ (`iobroker.homematic-3rd-party-temp-sensors`) von **Mic-M**, siehe [ioBroker-Forum-Thread](https://forum.iobroker.net/topic/20873/). Dieses Projekt ist eine Neuimplementierung und kein Fork.
 
 ## Lizenz
 
