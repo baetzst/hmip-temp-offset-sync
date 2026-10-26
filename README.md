@@ -105,7 +105,7 @@ If the datapoint already exists with a value, that value is used right away. Wit
 
 ## Credits
 
-The idea of aligning thermostats with an external sensor via the offset comes from the script "Einbindung Fremd-Temperatur-Sensoren in Homematic mittels Offset-Setzen" (iobroker.homematic-3rd-party-temp-sensors) by Mic-M, see the ioBroker forum thread. This project is a new implementation and not a fork.
+The idea of aligning thermostats with an external sensor via the offset comes from the script "Einbindung Fremd-Temperatur-Sensoren in Homematic mittels Offset-Setzen" (`iobroker.homematic-3rd-party-temp-sensors`) by **Mic-M**, see the [ioBroker forum thread](https://forum.iobroker.net/topic/20873/). This project is a new implementation and not a fork.
 
 ## License
 
