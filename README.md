@@ -103,9 +103,9 @@ If the datapoint already exists with a value, that value is used right away. Wit
 - The script is meant for HmIP thermostats only and has not been tested with all device variants.
 - Comments in the script and log messages are in German.
 
-## Background
+## Credits
 
-The idea of aligning thermostats with an external sensor via the offset comes from the ioBroker community. This project is an **independent reimplementation** and not a fork or derivative of any existing script.
+The idea of aligning thermostats with an external sensor via the offset comes from the script "Einbindung Fremd-Temperatur-Sensoren in Homematic mittels Offset-Setzen" (iobroker.homematic-3rd-party-temp-sensors) by Mic-M, see the ioBroker forum thread. This project is a new implementation and not a fork.
 
 ## License
 
