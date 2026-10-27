@@ -1,74 +1,77 @@
 /**
  * hmip-temp-offset-sync
  *
- * Gleicht die Temperaturmessung von Homematic-IP-Heizkörperthermostaten an einen
- * externen Referenzsensor an (z. B. Zigbee2MQTT), indem der Parameter
- * TEMPERATURE_OFFSET des Thermostats angepasst wird.
+ * Aligns the temperature reading of Homematic IP radiator thermostats with an
+ * external reference sensor (e.g. Zigbee2MQTT) by adjusting the thermostat's
+ * TEMPERATURE_OFFSET parameter.
  *
- * Läuft im ioBroker-JavaScript-Adapter. Lizenz: MIT (siehe LICENSE).
+ * Runs in the ioBroker JavaScript adapter. License: MIT (see LICENSE).
  *
- * Funktionsprinzip (kurz):
- *   Das Thermostat meldet bereits die offsetkorrigierte Temperatur. Weicht diese
- *   vom Referenzsensor ab, wird der Offset um genau diese Abweichung nachgeführt
- *   (auf 0,5-K-Schritte gerundet, begrenzt auf ±3,5 K).
+ * How it works (brief):
+ *   The thermostat already reports the offset-corrected temperature. If it
+ *   deviates from the reference sensor, the offset is adjusted by exactly that
+ *   deviation (rounded to 0.5 K steps, limited to ±3.5 K).
  *
- * Schutzmechanismen:
- *   - Referenzwert muss eine plausible Zahl und nicht zu alt sein
- *   - ist der Offset noch unbekannt (erster Start), wird er aus der
- *     Gerätekonfiguration gelesen; gelingt das nicht, wird Offset 0 gesendet und
- *     als Startwert gespeichert; ab dem nächsten Zyklus wird geregelt
- *   - Änderungen nur bei ausreichender Abweichung (Hysterese)
- *   - nach einer Änderung wird eine Mindestzeit gewartet und auf einen
- *     neuen Messwert des Thermostats gewartet, bevor erneut gerechnet wird
- *   - ist UNREACH oder CONFIG_PENDING am Thermostat gesetzt (Funkproblem
- *     CCU <-> Thermostat), wird kein neuer Offset gesendet
- *   - Thermostate mit sehr niedriger Solltemperatur (z. B. Abwesenheit) bleiben unberührt
- *   - Trockenlauf-Modus zum gefahrlosen Testen
+ * Safeguards:
+ *   - the reference value must be a plausible number and must not be too old
+ *   - if the offset is still unknown (first start), it is read from the
+ *     device configuration; if that fails, offset 0 is sent and stored as the
+ *     initial value; regulation starts with the next cycle
+ *   - changes only if the deviation is large enough (hysteresis)
+ *   - after a change, a minimum time must pass and a new reading from the
+ *     thermostat must arrive before recalculating
+ *   - if UNREACH or CONFIG_PENDING is set on the thermostat (radio problem
+ *     CCU <-> thermostat), no new offset is sent
+ *   - thermostats with a very low setpoint (e.g. away mode) are left untouched
+ *   - dry-run mode for safe testing
  */
 
 // ---------------------------------------------------------------------------
-// Konfiguration
+// Configuration
 // ---------------------------------------------------------------------------
 
-// Ablageort der Status-Datenpunkte (ohne abschließenden Punkt)
+// Location of the status states (without trailing dot)
 const STATE_ROOT = '0_userdata.0.HmIPTempSync';
 
-// Prüfintervall (Cron-Ausdruck)
+// Check interval (cron expression)
 const CHECK_CRON = '*/30 * * * *';
 
-// Nach einer Änderung mindestens so viele Minuten warten
+// Minimum wait time in minutes after a change
 const MIN_WAIT_MIN = 60;
 
-// Erst ab dieser Abweichung (in K) wird der Offset angepasst.
-// Verhindert ständiges Hin- und Herspringen zwischen zwei 0,5-K-Stufen.
+// The offset is only adjusted from this deviation (in K) upwards.
+// Prevents constant toggling between two 0.5 K steps.
 const HYSTERESIS = 0.75;
 
-// Abweichung zwischen Thermostat und Referenzsensor (in K), ab der nichts geändert wird.
-// Der Offset lässt sich von -3,5 bis +3,5 verstellen, also um höchstens 7 K.
-// Der neue Offset wird anschließend auf ±3,5 begrenzt.
+// Deviation between thermostat and reference sensor (in K) above which nothing is changed.
+// The offset can be set from -3.5 to +3.5, i.e. by at most 7 K.
+// The new offset is then limited to ±3.5.
 const MAX_DEVIATION = 7;
 
-// Referenzsensor darf höchstens so alt sein (Minuten)
+// Maximum age of the reference sensor value (minutes)
 const MAX_SENSOR_AGE_MIN = 120;
 
-// true = nur rechnen und loggen, nichts an die Thermostate senden
+// true = only calculate and log, send nothing to the thermostats
 const DRY_RUN = false;
 
-// Logausgabe
-//   LOG_ERROR  Probleme: ungültige oder alte Sensorwerte, UNREACH, CONFIG_PENDING,
-//              Lese-/Schreibfehler, unplausible Abweichung
-//   LOG_INFO   durchgeführte Änderungen und Prüfungen ohne Änderung
-//   LOG_DEBUG  zusätzlich: Gründe, warum in einem Zyklus nicht gerechnet wurde
+// Log language: key of a language block in MESSAGES (e.g. 'de', 'en')
+const LOG_LANG = 'de';
+
+// Log output
+//   LOG_ERROR  problems: invalid or outdated sensor values, UNREACH, CONFIG_PENDING,
+//              read/write errors, implausible deviation
+//   LOG_INFO   changes made and checks without change
+//   LOG_DEBUG  additionally: reasons why no calculation was done in a cycle
 const LOG_ERROR = true;
 const LOG_INFO = true;
 const LOG_DEBUG = false;
 
-// Thermostate
-//   name       frei wählbar und eindeutig, wird für Log und Datenpunkt-Namen verwendet
-//   serial     Seriennummer des Thermostats (Teil des Datenpunkt-Pfads in hm-rpc)
-//   instance   Homematic-Instanz, an der das Thermostat hängt (z. B. 'hm-rpc.1')
-//   sensor     Datenpunkt des Referenzsensors (Zahl in °C)
-//   minSetTemp Nur anpassen, wenn die Solltemperatur mindestens so hoch ist
+// Thermostats
+//   name       freely selectable and unique, used for log and state names
+//   serial     serial number of the thermostat (part of the state path in hm-rpc)
+//   instance   Homematic instance the thermostat is connected to (e.g. 'hm-rpc.1')
+//   sensor     state of the reference sensor (number in °C)
+//   minSetTemp only adjust if the setpoint is at least this high
 const THERMOSTATS = [
     { name: 'Wohnzimmer',   instance: 'hm-rpc.1', serial: '00XXXXXXXXXXXX', sensor: 'zigbee2mqtt.0.0xXXXXXXXXXXXXXXXX.temperature', minSetTemp: 15 },
     // { name: 'Schlafzimmer', instance: 'hm-rpc.1', serial: '00YYYYYYYYYYYY', sensor: 'zigbee2mqtt.0.0xYYYYYYYYYYYYYYYY.temperature', minSetTemp: 15 },
@@ -76,24 +79,123 @@ const THERMOSTATS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Ab hier nichts ändern
+// Log texts
+//   One block per language. To add a language, copy a block, rename the key
+//   (e.g. 'fr') and translate the texts. Placeholders in {braces} are filled
+//   in at runtime and must be kept unchanged.
+//   Missing texts fall back to FALLBACK_LANG.
 // ---------------------------------------------------------------------------
 
-const CHANNEL = 1;              // Kanal mit Thermostat-Parametern bei HmIP-Thermostaten
-const MAX_OFFSET = 3.5;         // Wertebereich von TEMPERATURE_OFFSET: -3,5 ... +3,5
+const FALLBACK_LANG = 'de';
+
+const MESSAGES = {
+    de: {
+        timeout:              'Zeitüberschreitung',
+        noResponse:           'keine Antwort',
+        unreach:              'Thermostat ist nicht erreichbar (UNREACH), nichts gesendet.',
+        configPending:        'CONFIG_PENDING ist gesetzt (Konfiguration noch nicht übertragen), nichts gesendet.',
+        initFromCcu:          'Startwert aus der Gerätekonfiguration gelesen: Offset {offset} K.',
+        initNoCcuValue:       'Kein Offset-Wert aus der Gerätekonfiguration erhalten.',
+        initReadFailed:       'Offset konnte nicht gelesen werden: {error}',
+        initDryRun:           '[Trockenlauf] Offset unbekannt, würde Offset 0 senden und als Startwert speichern.',
+        initSentZero:         'Offset war unbekannt: Offset 0 gesendet und als Startwert gespeichert.',
+        refInvalid:           'Referenzsensor liefert keinen gültigen Wert, übersprungen.',
+        refTooOld:            'Referenzsensor ist älter als {maxAge} min, übersprungen.',
+        thermostatInvalid:    'Thermostat liefert keine gültigen Werte, übersprungen.',
+        setpointTooLow:       'Solltemperatur {setpoint} °C unter {minSetTemp} °C, nichts zu tun.',
+        waitTimeActive:       'Mindestwartezeit seit der letzten Änderung noch nicht erreicht.',
+        noNewReading:         'Seit der letzten Änderung kam noch kein neuer Messwert.',
+        deviationImplausible: 'Abweichung {dev} K ist unplausibel groß, keine Änderung.',
+        belowHysteresis:      'Referenz {ref} °C, Thermostat {measured} °C, Abweichung {dev} K, unter der Schwelle von {hysteresis} K: Offset bleibt bei {offset} K.',
+        offsetUnchanged:      'Referenz {ref} °C, Thermostat {measured} °C, Abweichung {dev} K: Offset bleibt bei {offset} K (neu berechneter Offset gleich oder Grenze erreicht).',
+        offsetChanged:        'Referenz {ref} °C, Thermostat {measured} °C, Offset {from} → {to} K',
+        offsetChangedDryRun:  '[Trockenlauf] Referenz {ref} °C, Thermostat {measured} °C, Offset {from} → {to} K',
+        processError:         'Fehler: {error}',
+        namesNotUnique:       'Die Namen der Thermostate müssen eindeutig sein.',
+        fieldMissing:         'Im Thermostat-Eintrag "{name}" fehlt das Feld "{field}".',
+        stateNameOffset:      'Zuletzt gesetzter Offset',
+        stateNameLastChange:  'Zeitpunkt der letzten Änderung (ms)',
+        startFailed:          'Start fehlgeschlagen: {error}',
+        unknownLang:          'LOG_LANG "{lang}" ist unbekannt, verwende "{fallback}".',
+        missingTexts:         'Für LOG_LANG "{lang}" fehlen Texte (Fallback "{fallback}" wird verwendet): {keys}',
+    },
+    en: {
+        timeout:              'timeout',
+        noResponse:           'no response',
+        unreach:              'Thermostat is unreachable (UNREACH), nothing sent.',
+        configPending:        'CONFIG_PENDING is set (configuration not yet transferred), nothing sent.',
+        initFromCcu:          'Initial value read from device configuration: offset {offset} K.',
+        initNoCcuValue:       'No offset value received from device configuration.',
+        initReadFailed:       'Offset could not be read: {error}',
+        initDryRun:           '[Dry run] Offset unknown, would send offset 0 and store it as initial value.',
+        initSentZero:         'Offset was unknown: offset 0 sent and stored as initial value.',
+        refInvalid:           'Reference sensor does not provide a valid value, skipped.',
+        refTooOld:            'Reference sensor value is older than {maxAge} min, skipped.',
+        thermostatInvalid:    'Thermostat does not provide valid values, skipped.',
+        setpointTooLow:       'Setpoint {setpoint} °C below {minSetTemp} °C, nothing to do.',
+        waitTimeActive:       'Minimum wait time since the last change not yet reached.',
+        noNewReading:         'No new reading received since the last change.',
+        deviationImplausible: 'Deviation {dev} K is implausibly large, no change.',
+        belowHysteresis:      'Reference {ref} °C, thermostat {measured} °C, deviation {dev} K, below the threshold of {hysteresis} K: offset stays at {offset} K.',
+        offsetUnchanged:      'Reference {ref} °C, thermostat {measured} °C, deviation {dev} K: offset stays at {offset} K (recalculated offset unchanged or limit reached).',
+        offsetChanged:        'Reference {ref} °C, thermostat {measured} °C, offset {from} → {to} K',
+        offsetChangedDryRun:  '[Dry run] Reference {ref} °C, thermostat {measured} °C, offset {from} → {to} K',
+        processError:         'Error: {error}',
+        namesNotUnique:       'Thermostat names must be unique.',
+        fieldMissing:         'Thermostat entry "{name}" is missing the field "{field}".',
+        stateNameOffset:      'Last set offset',
+        stateNameLastChange:  'Time of last change (ms)',
+        startFailed:          'Start failed: {error}',
+        unknownLang:          'LOG_LANG "{lang}" is unknown, using "{fallback}".',
+        missingTexts:         'Texts missing for LOG_LANG "{lang}" (falling back to "{fallback}"): {keys}',
+    },
+};
+
+// ---------------------------------------------------------------------------
+// Do not change anything below this line
+// ---------------------------------------------------------------------------
+
+const CHANNEL = 1;              // channel with thermostat parameters on HmIP thermostats
+const MAX_OFFSET = 3.5;         // value range of TEMPERATURE_OFFSET: -3.5 ... +3.5
 const REQUEST_TIMEOUT_MS = 30000;
+
+// Active language: LOG_LANG if defined in MESSAGES, otherwise FALLBACK_LANG
+const ACTIVE_LANG = MESSAGES[LOG_LANG] ? LOG_LANG : FALLBACK_LANG;
 
 let running = false;
 
-function logError(msg) { if (LOG_ERROR) log(msg, 'error'); }
-function logInfo(msg) { if (LOG_INFO) log(msg, 'info'); }
-function logDebug(msg) { if (LOG_DEBUG) log(msg, 'debug'); }
+// Get a log text in the active language and fill in placeholders.
+// Lookup order: active language -> fallback language -> key itself.
+function msg(key, vars = {}) {
+    const text = (MESSAGES[ACTIVE_LANG] && MESSAGES[ACTIVE_LANG][key])
+        || (MESSAGES[FALLBACK_LANG] && MESSAGES[FALLBACK_LANG][key])
+        || key;
+    return text.replace(/\{(\w+)\}/g, (match, name) =>
+        Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match);
+}
+
+// Warn at startup about an unknown language or missing texts
+function checkLanguage() {
+    if (!MESSAGES[LOG_LANG]) {
+        log(msg('unknownLang', { lang: LOG_LANG, fallback: FALLBACK_LANG }), 'warn');
+        return;
+    }
+    const missing = Object.keys(MESSAGES[FALLBACK_LANG])
+        .filter(key => !MESSAGES[LOG_LANG][key]);
+    if (missing.length) {
+        log(msg('missingTexts', { lang: LOG_LANG, fallback: FALLBACK_LANG, keys: missing.join(', ') }), 'warn');
+    }
+}
+
+function logError(text) { if (LOG_ERROR) log(text, 'error'); }
+function logInfo(text) { if (LOG_INFO) log(text, 'info'); }
+function logDebug(text) { if (LOG_DEBUG) log(text, 'debug'); }
 
 function slug(name) {
     return name.replace(/[^A-Za-z0-9_]/g, '_');
 }
 
-// auf 0,5-K-Schritte runden und auf den zulässigen Bereich begrenzen
+// Round to 0.5 K steps and limit to the permitted range
 function toStep(value) {
     const stepped = Math.round(value * 2) / 2;
     return Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, stepped));
@@ -104,23 +206,23 @@ function isValidNumber(state, min, max) {
         && state.val >= min && state.val <= max;
 }
 
-// Anfrage an den Homematic-Adapter als Promise
+// Request to the Homematic adapter as a Promise
 function hmRequest(instance, command, params) {
     return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Zeitüberschreitung')), REQUEST_TIMEOUT_MS);
+        const timer = setTimeout(() => reject(new Error(msg('timeout'))), REQUEST_TIMEOUT_MS);
         sendTo(instance, command, params, res => {
             clearTimeout(timer);
-            if (!res) return reject(new Error('keine Antwort'));
+            if (!res) return reject(new Error(msg('noResponse')));
             if (res.error) return reject(new Error(String(res.error)));
             resolve(res.result);
         });
     });
 }
 
-// Offset aus der Gerätekonfiguration lesen (MASTER-Paramset über den Homematic-Adapter).
-// Liefert null, wenn kein plausibler Wert zurückkommt.
+// Read the offset from the device configuration (MASTER paramset via the Homematic adapter).
+// Returns null if no plausible value is received.
 async function readOffsetFromCcu(t) {
-    const result = await hmRequest(t.hm, 'getParamset',{ ID: `${t.serial}:${CHANNEL}`, paramType: 'MASTER' });
+    const result = await hmRequest(t.hm, 'getParamset', { ID: `${t.serial}:${CHANNEL}`, paramType: 'MASTER' });
     const value = result && result.TEMPERATURE_OFFSET;
     return (typeof value === 'number' && isFinite(value) && Math.abs(value) <= MAX_OFFSET) ? value : null;
 }
@@ -133,175 +235,37 @@ async function writeOffsetToCcu(t, value) {
     });
 }
 
-// Darf aktuell etwas an das Thermostat gesendet werden?
-// Nicht bei Funkproblemen zwischen CCU und Thermostat (UNREACH, CONFIG_PENDING).
+// May anything be sent to the thermostat right now?
+// Not in case of radio problems between CCU and thermostat (UNREACH, CONFIG_PENDING).
 async function canSend(t, tag) {
     const unreach = await getStateAsync(`${t.deviceBase}.0.UNREACH`);
     if (unreach && unreach.val === true) {
-        logError(`${tag}Thermostat ist nicht erreichbar (UNREACH), nichts gesendet.`);
+        logError(tag + msg('unreach'));
         return false;
     }
     const pending = await getStateAsync(`${t.deviceBase}.0.CONFIG_PENDING`);
     if (pending && pending.val === true) {
-        logError(`${tag}CONFIG_PENDING ist gesetzt (Konfiguration noch nicht übertragen), nichts gesendet.`);
+        logError(tag + msg('configPending'));
         return false;
     }
     return true;
 }
 
-// Erster Lauf: Der Offset ist noch unbekannt (Datenpunkt leer).
-// 1. Versuch: Wert aus der Gerätekonfiguration lesen und als Startwert speichern.
-// 2. Fallback: Offset 0 senden und als Startwert speichern.
-// Ab dem nächsten Zyklus wird normal geregelt.
+// First run: the offset is still unknown (state empty).
+// 1st attempt: read the value from the device configuration and store it as initial value.
+// 2nd fallback: send offset 0 and store it as initial value.
+// Normal regulation starts with the next cycle.
 async function initializeOffset(t, tag) {
     try {
         const fromCcu = await readOffsetFromCcu(t);
         if (fromCcu !== null) {
             await setStateAsync(`${t.stateBase}.offset`, fromCcu, true);
-            logInfo(`${tag}Startwert aus der Gerätekonfiguration gelesen: Offset ${fromCcu} K.`);
+            logInfo(tag + msg('initFromCcu', { offset: fromCcu }));
             return;
         }
-        logDebug(`${tag}Kein Offset-Wert aus der Gerätekonfiguration erhalten.`);
+        logDebug(tag + msg('initNoCcuValue'));
     } catch (e) {
-        logError(`${tag}Offset konnte nicht gelesen werden: ${e.message}`);
+        logError(tag + msg('initReadFailed', { error: e.message }));
     }
     if (DRY_RUN) {
-        logInfo(`${tag}[Trockenlauf] Offset unbekannt, würde Offset 0 senden und als Startwert speichern.`);
-        return;
-    }
-    if (!(await canSend(t, tag))) return;
-    await writeOffsetToCcu(t, 0);
-    await setStateAsync(`${t.stateBase}.offset`, 0, true);
-    await setStateAsync(`${t.stateBase}.lastChange`, Date.now(), true);
-    logInfo(`${tag}Offset war unbekannt: Offset 0 gesendet und als Startwert gespeichert.`);
-}
-
-async function processThermostat(t) {
-    const tag = `[${t.name}] `;
-    const now = Date.now();
-
-    // 0. Startwert: noch kein Offset gespeichert -> Offset 0 senden und merken
-    const stored = await getStateAsync(`${t.stateBase}.offset`);
-    if (!stored || typeof stored.val !== 'number') {
-        await initializeOffset(t, tag);
-        return;
-    }
-    const current = stored.val;
-
-    // 1. Referenzsensor prüfen
-    const ref = await getStateAsync(t.sensor);
-    if (!isValidNumber(ref, -30, 60)) {
-        logError(`${tag}Referenzsensor liefert keinen gültigen Wert, übersprungen.`);
-        return;
-    }
-    if (now - ref.ts > MAX_SENSOR_AGE_MIN * 60000) {
-        logError(`${tag}Referenzsensor ist älter als ${MAX_SENSOR_AGE_MIN} min, übersprungen.`);
-        return;
-    }
-
-    // 2. Werte des Thermostats
-    const measured = await getStateAsync(`${t.hmBase}.ACTUAL_TEMPERATURE`);
-    const setpoint = await getStateAsync(`${t.hmBase}.SET_POINT_TEMPERATURE`);
-    if (!isValidNumber(measured, -30, 60) || !isValidNumber(setpoint, 0, 40)) {
-        logError(`${tag}Thermostat liefert keine gültigen Werte, übersprungen.`);
-        return;
-    }
-    if (setpoint.val < t.minSetTemp) {
-        logDebug(`${tag}Solltemperatur ${setpoint.val} °C unter ${t.minSetTemp} °C, nichts zu tun.`);
-        return;
-    }
-
-    // 3. Wartezeit und frischer Messwert seit der letzten Änderung
-    const lastChangeState = await getStateAsync(`${t.stateBase}.lastChange`);
-    const lastChange = lastChangeState && typeof lastChangeState.val === 'number' ? lastChangeState.val : 0;
-    if (now - lastChange < MIN_WAIT_MIN * 60000) {
-        logDebug(`${tag}Mindestwartezeit seit der letzten Änderung noch nicht erreicht.`);
-        return;
-    }
-    if (measured.ts <= lastChange) {
-        logDebug(`${tag}Seit der letzten Änderung kam noch kein neuer Messwert.`);
-        return;
-    }
-
-    // 4. Abweichung bewerten
-    const deviation = ref.val - measured.val;
-    if (Math.abs(deviation) > MAX_DEVIATION) {
-        logError(`${tag}Abweichung ${deviation.toFixed(2)} K ist unplausibel groß, keine Änderung.`);
-        return;
-    }
-    const status = `Referenz ${ref.val} °C, Thermostat ${measured.val} °C, Abweichung ${deviation.toFixed(2)} K`;
-    if (Math.abs(deviation) < HYSTERESIS) {
-        logInfo(`${tag}${status}, unter der Schwelle von ${HYSTERESIS} K: Offset bleibt bei ${current} K.`);
-        return;
-    }
-    const next = toStep(current + deviation);
-    if (next === current) {
-        logInfo(`${tag}${status}: Offset bleibt bei ${current} K (neu berechneter Offset gleich oder Grenze erreicht).`);
-        return;
-    }
-
-    // 5. Bei Funkproblemen nichts senden
-    if (!(await canSend(t, tag))) return;
-
-    // 6. Setzen
-    const summary =`Referenz ${ref.val} °C, Thermostat ${measured.val} °C, Offset ${current} → ${next} K`;
-    if (DRY_RUN) {
-        logInfo(`${tag}[Trockenlauf] ${summary}`);
-        return;
-    }
-    await writeOffsetToCcu(t, next);
-    await setStateAsync(`${t.stateBase}.offset`, next, true);
-    await setStateAsync(`${t.stateBase}.lastChange`, now, true);
-    logInfo(`${tag}${summary}`);
-}
-
-async function run() {
-    if (running) return;
-    running = true;
-    try {
-        for (const t of THERMOSTATS) {
-            try {
-                await processThermostat(t);
-            } catch (e) {
-                logError(`[${t.name}] Fehler: ${e.message}`);
-            }
-        }
-    } finally {
-        running = false;
-    }
-}
-
-async function ensureStates() {
-    const slugs = THERMOSTATS.map(t => slug(t.name));
-    if (new Set(slugs).size !== slugs.length) {
-        throw new Error('Die Namen der Thermostate müssen eindeutig sein.');
-    }
-    for (const t of THERMOSTATS) {
-        for (const field of ['name', 'instance', 'serial', 'sensor']) {
-            if (typeof t[field] !== 'string' || !t[field]) {
-                throw new Error(`Im Thermostat-Eintrag "${t.name || '?'}" fehlt das Feld "${field}".`);
-            }
-        }
-        t.stateBase = `${STATE_ROOT}.${slug(t.name)}`;
-        t.hm = t.instance;
-        t.deviceBase = `${t.hm}.${t.serial}`;
-        t.hmBase = `${t.deviceBase}.${CHANNEL}`;
-        await createStateAsync(`${t.stateBase}.offset`, {
-            name: 'Zuletzt gesetzter Offset', type: 'number', role: 'value.temperature',
-            unit: 'K', read: true, write: true,
-        });
-        await createStateAsync(`${t.stateBase}.lastChange`, {
-            name: 'Zeitpunkt der letzten Änderung (ms)', type: 'number', role: 'value.time',
-            read: true, write: true,
-        });
-    }
-}
-
-async function main() {
-    await ensureStates();
-    const job = schedule(CHECK_CRON, run);
-    onStop(cb => { clearSchedule(job); cb(); }, 1000);
-    setTimeout(run, 10000);
-}
-
-main().catch(e => log(`Start fehlgeschlagen: ${e.message}`, 'error'));
+    
