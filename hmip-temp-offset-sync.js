@@ -54,7 +54,8 @@ const MAX_SENSOR_AGE_MIN = 120;
 // true = only calculate and log, send nothing to the thermostats
 const DRY_RUN = false;
 
-// Log language: key of a language block in MESSAGES (e.g. 'de', 'en')
+// Language for log output and state descriptions: key of a language block
+// in MESSAGES (e.g. 'en', 'de'). State names are always English.
 const LOG_LANG = 'de';
 
 // Log output
@@ -79,7 +80,7 @@ const THERMOSTATS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Log texts
+// Texts (log output and state descriptions)
 //   One block per language. To add a language, copy a block, rename the key
 //   (e.g. 'fr') and translate the texts. Placeholders in {braces} are filled
 //   in at runtime and must be kept unchanged.
@@ -113,8 +114,8 @@ const MESSAGES = {
         processError:         'Error: {error}',
         namesNotUnique:       'Thermostat names must be unique.',
         fieldMissing:         'Thermostat entry "{name}" is missing the field "{field}".',
-        stateNameOffset:      'Last set offset',
-        stateNameLastChange:  'Time of last change (ms)',
+        stateDescOffset:      'Temperature offset last sent to the thermostat',
+        stateDescLastChange:  'Time of the last offset change (Unix time in ms)',
         startFailed:          'Start failed: {error}',
         unknownLang:          'LOG_LANG "{lang}" is unknown, using "{fallback}".',
         missingTexts:         'Texts missing for LOG_LANG "{lang}" (falling back to "{fallback}"): {keys}',
@@ -143,8 +144,8 @@ const MESSAGES = {
         processError:         'Fehler: {error}',
         namesNotUnique:       'Die Namen der Thermostate müssen eindeutig sein.',
         fieldMissing:         'Im Thermostat-Eintrag "{name}" fehlt das Feld "{field}".',
-        stateNameOffset:      'Zuletzt gesetzter Offset',
-        stateNameLastChange:  'Zeitpunkt der letzten Änderung (ms)',
+        stateDescOffset:      'Zuletzt an das Thermostat gesendeter Temperatur-Offset',
+        stateDescLastChange:  'Zeitpunkt der letzten Offset-Änderung (Unix-Zeit in ms)',
         startFailed:          'Start fehlgeschlagen: {error}',
         unknownLang:          'LOG_LANG "{lang}" ist unbekannt, verwende "{fallback}".',
         missingTexts:         'Für LOG_LANG "{lang}" fehlen Texte (Fallback "{fallback}" wird verwendet): {keys}',
@@ -159,12 +160,24 @@ const CHANNEL = 1;              // channel with thermostat parameters on HmIP th
 const MAX_OFFSET = 3.5;         // value range of TEMPERATURE_OFFSET: -3.5 ... +3.5
 const REQUEST_TIMEOUT_MS = 30000;
 
+// State definitions: names are always English, descriptions follow LOG_LANG
+const STATE_DEFS = {
+    offset: {
+        name: 'Last set offset', descKey: 'stateDescOffset',
+        common: { type: 'number', role: 'value.temperature', unit: 'K', read: true, write: true },
+    },
+    lastChange: {
+        name: 'Time of last change', descKey: 'stateDescLastChange',
+        common: { type: 'number', role: 'value.time', read: true, write: true },
+    },
+};
+
 // Active language: LOG_LANG if defined in MESSAGES, otherwise FALLBACK_LANG
 const ACTIVE_LANG = MESSAGES[LOG_LANG] ? LOG_LANG : FALLBACK_LANG;
 
 let running = false;
 
-// Get a log text in the active language and fill in placeholders.
+// Get a text in the active language and fill in placeholders.
 // Lookup order: active language -> fallback language -> key itself.
 function msg(key, vars = {}) {
     const text = (MESSAGES[ACTIVE_LANG] && MESSAGES[ACTIVE_LANG][key])
@@ -268,4 +281,146 @@ async function initializeOffset(t, tag) {
         logError(tag + msg('initReadFailed', { error: e.message }));
     }
     if (DRY_RUN) {
-    
+        logInfo(tag + msg('initDryRun'));
+        return;
+    }
+    if (!(await canSend(t, tag))) return;
+    await writeOffsetToCcu(t, 0);
+    await setStateAsync(`${t.stateBase}.offset`, 0, true);
+    await setStateAsync(`${t.stateBase}.lastChange`, Date.now(), true);
+    logInfo(tag + msg('initSentZero'));
+}
+
+async function processThermostat(t) {
+    const tag = `[${t.name}] `;
+    const now = Date.now();
+
+    // 0. Initial value: no offset stored yet -> read from device or send offset 0 and store it
+    const stored = await getStateAsync(`${t.stateBase}.offset`);
+    if (!stored || typeof stored.val !== 'number') {
+        await initializeOffset(t, tag);
+        return;
+    }
+    const current = stored.val;
+
+    // 1. Check reference sensor
+    const ref = await getStateAsync(t.sensor);
+    if (!isValidNumber(ref, -30, 60)) {
+        logError(tag + msg('refInvalid'));
+        return;
+    }
+    if (now - ref.ts > MAX_SENSOR_AGE_MIN * 60000) {
+        logError(tag + msg('refTooOld', { maxAge: MAX_SENSOR_AGE_MIN }));
+        return;
+    }
+
+    // 2. Thermostat values
+    const measured = await getStateAsync(`${t.hmBase}.ACTUAL_TEMPERATURE`);
+    const setpoint = await getStateAsync(`${t.hmBase}.SET_POINT_TEMPERATURE`);
+    if (!isValidNumber(measured, -30, 60) || !isValidNumber(setpoint, 0, 40)) {
+        logError(tag + msg('thermostatInvalid'));
+        return;
+    }
+    if (setpoint.val < t.minSetTemp) {
+        logDebug(tag + msg('setpointTooLow', { setpoint: setpoint.val, minSetTemp: t.minSetTemp }));
+        return;
+    }
+
+    // 3. Wait time and fresh reading since the last change
+    const lastChangeState = await getStateAsync(`${t.stateBase}.lastChange`);
+    const lastChange = lastChangeState && typeof lastChangeState.val === 'number' ? lastChangeState.val : 0;
+    if (now - lastChange < MIN_WAIT_MIN * 60000) {
+        logDebug(tag + msg('waitTimeActive'));
+        return;
+    }
+    if (measured.ts <= lastChange) {
+        logDebug(tag + msg('noNewReading'));
+        return;
+    }
+
+    // 4. Evaluate deviation
+    const deviation = ref.val - measured.val;
+    const vars = { ref: ref.val, measured: measured.val, dev: deviation.toFixed(2), offset: current };
+    if (Math.abs(deviation) > MAX_DEVIATION) {
+        logError(tag + msg('deviationImplausible', vars));
+        return;
+    }
+    if (Math.abs(deviation) < HYSTERESIS) {
+        logInfo(tag + msg('belowHysteresis', { ...vars, hysteresis: HYSTERESIS }));
+        return;
+    }
+    const next = toStep(current + deviation);
+    if (next === current) {
+        logInfo(tag + msg('offsetUnchanged', vars));
+        return;
+    }
+
+    // 5. Do not send anything in case of radio problems
+    if (!(await canSend(t, tag))) return;
+
+    // 6. Apply
+    const changeVars = { ...vars, from: current, to: next };
+    if (DRY_RUN) {
+        logInfo(tag + msg('offsetChangedDryRun', changeVars));
+        return;
+    }
+    await writeOffsetToCcu(t, next);
+    await setStateAsync(`${t.stateBase}.offset`, next, true);
+    await setStateAsync(`${t.stateBase}.lastChange`, now, true);
+    logInfo(tag + msg('offsetChanged', changeVars));
+}
+
+async function run() {
+    if (running) return;
+    running = true;
+    try {
+        for (const t of THERMOSTATS) {
+            try {
+                await processThermostat(t);
+            } catch (e) {
+                logError(`[${t.name}] ` + msg('processError', { error: e.message }));
+            }
+        }
+    } finally {
+        running = false;
+    }
+}
+
+// Create the state if missing; always update name (English) and description
+// (active language), so existing states follow changes as well
+async function ensureState(id, def) {
+    const common = { ...def.common, name: def.name, desc: msg(def.descKey) };
+    await createStateAsync(id, common);
+    await extendObjectAsync(id, { common: { name: common.name, desc: common.desc } });
+}
+
+async function ensureStates() {
+    const slugs = THERMOSTATS.map(t => slug(t.name));
+    if (new Set(slugs).size !== slugs.length) {
+        throw new Error(msg('namesNotUnique'));
+    }
+    for (const t of THERMOSTATS) {
+        for (const field of ['name', 'instance', 'serial', 'sensor']) {
+            if (typeof t[field] !== 'string' || !t[field]) {
+                throw new Error(msg('fieldMissing', { name: t.name || '?', field }));
+            }
+        }
+        t.stateBase = `${STATE_ROOT}.${slug(t.name)}`;
+        t.hm = t.instance;
+        t.deviceBase = `${t.hm}.${t.serial}`;
+        t.hmBase = `${t.deviceBase}.${CHANNEL}`;
+        for (const [key, def] of Object.entries(STATE_DEFS)) {
+            await ensureState(`${t.stateBase}.${key}`, def);
+        }
+    }
+}
+
+async function main() {
+    checkLanguage();
+    await ensureStates();
+    const job = schedule(CHECK_CRON, run);
+    onStop(cb => { clearSchedule(job); cb(); }, 1000);
+    setTimeout(run, 10000);
+}
+
+main().catch(e => log(msg('startFailed', { error: e.message }), 'error'));
