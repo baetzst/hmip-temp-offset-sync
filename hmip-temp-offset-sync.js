@@ -91,64 +91,64 @@ const FALLBACK_LANG = 'en';
 
 const MESSAGES = {
     en: {
-        timeout:              'timeout',
-        noResponse:           'no response',
-        unreach:              'Thermostat is unreachable (UNREACH), nothing sent.',
-        configPending:        'CONFIG_PENDING is set (configuration not yet transferred), nothing sent.',
-        initFromCcu:          'Initial value read from device configuration: offset {offset} K.',
-        initNoCcuValue:       'No offset value received from device configuration.',
-        initReadFailed:       'Offset could not be read: {error}',
-        initDryRun:           '[Dry run] Offset unknown, would send offset 0 and store it as initial value.',
-        initSentZero:         'Offset was unknown: offset 0 sent and stored as initial value.',
-        refInvalid:           'Reference sensor does not provide a valid value, skipped.',
-        refTooOld:            'Reference sensor value is older than {maxAge} min, skipped.',
-        thermostatInvalid:    'Thermostat does not provide valid values, skipped.',
-        setpointTooLow:       'Setpoint {setpoint} °C below {minSetTemp} °C, nothing to do.',
-        waitTimeActive:       'Minimum wait time since the last change not yet reached.',
-        noNewReading:         'No new reading received since the last change.',
-        deviationImplausible: 'Deviation {dev} K is implausibly large, no change.',
-        belowHysteresis:      'Reference {ref} °C, thermostat {measured} °C, deviation {dev} K, below the threshold of {hysteresis} K: offset stays at {offset} K.',
-        offsetUnchanged:      'Reference {ref} °C, thermostat {measured} °C, deviation {dev} K: offset stays at {offset} K (recalculated offset unchanged or limit reached).',
-        offsetChanged:        'Reference {ref} °C, thermostat {measured} °C, offset {from} → {to} K',
-        offsetChangedDryRun:  '[Dry run] Reference {ref} °C, thermostat {measured} °C, offset {from} → {to} K',
-        processError:         'Error: {error}',
-        namesNotUnique:       'Thermostat names must be unique.',
-        fieldMissing:         'Thermostat entry "{name}" is missing the field "{field}".',
-        stateDescOffset:      'Temperature offset last sent to the thermostat',
-        stateDescLastChange:  'Time of the last offset change (Unix time in ms)',
-        startFailed:          'Start failed: {error}',
-        unknownLang:          'LOG_LANG "{lang}" is unknown, using "{fallback}".',
-        missingTexts:         'Texts missing for LOG_LANG "{lang}" (falling back to "{fallback}"): {keys}',
+        timeout:                 'timeout',
+        noResponse:              'no response',
+        unreach:                 'Thermostat is unreachable (UNREACH), nothing sent.',
+        configPending:           'CONFIG_PENDING is set (configuration not yet transferred), nothing sent.',
+        initFromCcu:             'Initial value read from device configuration: offset {offset} K.',
+        initNoCcuValue:          'No offset value received from device configuration.',
+        initReadFailed:          'Offset could not be read: {error}',
+        initDryRun:              '[Dry run] Offset unknown, would send offset 0 and store it as initial value.',
+        initSentZero:            'Offset was unknown: offset 0 sent and stored as initial value.',
+        refInvalid:              'Reference sensor does not provide a valid value, skipped.',
+        refTooOld:               'Reference sensor value is older than {maxAge} min, skipped.',
+        thermostatInvalid:       'Thermostat does not provide valid values, skipped.',
+        setpointTooLow:          'Setpoint {setpoint} °C below {minSetTemp} °C, nothing to do.',
+        changeDeferredWait:      'Reference {ref} °C, thermostat {measured} °C, deviation {dev} K: offset {offset} → {to} K would be due, but the minimum wait time has not been reached.',
+        changeDeferredNoReading: 'Reference {ref} °C, thermostat {measured} °C, deviation {dev} K: offset {offset} → {to} K would be due, but no new reading has arrived since the last change.',
+        deviationImplausible:    'Deviation {dev} K is implausibly large, no change.',
+        belowHysteresis:         'Reference {ref} °C, thermostat {measured} °C, deviation {dev} K, below the threshold of {hysteresis} K: offset stays at {offset} K.',
+        offsetUnchanged:         'Reference {ref} °C, thermostat {measured} °C, deviation {dev} K: offset stays at {offset} K (recalculated offset unchanged or limit reached).',
+        offsetChanged:           'Reference {ref} °C, thermostat {measured} °C, offset {from} → {to} K',
+        offsetChangedDryRun:     '[Dry run] Reference {ref} °C, thermostat {measured} °C, offset {from} → {to} K',
+        processError:            'Error: {error}',
+        namesNotUnique:          'Thermostat names must be unique.',
+        fieldMissing:            'Thermostat entry "{name}" is missing the field "{field}".',
+        stateDescOffset:         'Temperature offset last sent to the thermostat',
+        stateDescLastChange:     'Time of the last offset change (Unix time in ms)',
+        startFailed:             'Start failed: {error}',
+        unknownLang:             'LOG_LANG "{lang}" is unknown, using "{fallback}".',
+        missingTexts:            'Texts missing for LOG_LANG "{lang}" (falling back to "{fallback}"): {keys}',
     },
     de: {
-        timeout:              'Zeitüberschreitung',
-        noResponse:           'keine Antwort',
-        unreach:              'Thermostat ist nicht erreichbar (UNREACH), nichts gesendet.',
-        configPending:        'CONFIG_PENDING ist gesetzt (Konfiguration noch nicht übertragen), nichts gesendet.',
-        initFromCcu:          'Startwert aus der Gerätekonfiguration gelesen: Offset {offset} K.',
-        initNoCcuValue:       'Kein Offset-Wert aus der Gerätekonfiguration erhalten.',
-        initReadFailed:       'Offset konnte nicht gelesen werden: {error}',
-        initDryRun:           '[Trockenlauf] Offset unbekannt, würde Offset 0 senden und als Startwert speichern.',
-        initSentZero:         'Offset war unbekannt: Offset 0 gesendet und als Startwert gespeichert.',
-        refInvalid:           'Referenzsensor liefert keinen gültigen Wert, übersprungen.',
-        refTooOld:            'Referenzsensor ist älter als {maxAge} min, übersprungen.',
-        thermostatInvalid:    'Thermostat liefert keine gültigen Werte, übersprungen.',
-        setpointTooLow:       'Solltemperatur {setpoint} °C unter {minSetTemp} °C, nichts zu tun.',
-        waitTimeActive:       'Mindestwartezeit seit der letzten Änderung noch nicht erreicht.',
-        noNewReading:         'Seit der letzten Änderung kam noch kein neuer Messwert.',
-        deviationImplausible: 'Abweichung {dev} K ist unplausibel groß, keine Änderung.',
-        belowHysteresis:      'Referenz {ref} °C, Thermostat {measured} °C, Abweichung {dev} K, unter der Schwelle von {hysteresis} K: Offset bleibt bei {offset} K.',
-        offsetUnchanged:      'Referenz {ref} °C, Thermostat {measured} °C, Abweichung {dev} K: Offset bleibt bei {offset} K (neu berechneter Offset gleich oder Grenze erreicht).',
-        offsetChanged:        'Referenz {ref} °C, Thermostat {measured} °C, Offset {from} → {to} K',
-        offsetChangedDryRun:  '[Trockenlauf] Referenz {ref} °C, Thermostat {measured} °C, Offset {from} → {to} K',
-        processError:         'Fehler: {error}',
-        namesNotUnique:       'Die Namen der Thermostate müssen eindeutig sein.',
-        fieldMissing:         'Im Thermostat-Eintrag "{name}" fehlt das Feld "{field}".',
-        stateDescOffset:      'Zuletzt an das Thermostat gesendeter Temperatur-Offset',
-        stateDescLastChange:  'Zeitpunkt der letzten Offset-Änderung (Unix-Zeit in ms)',
-        startFailed:          'Start fehlgeschlagen: {error}',
-        unknownLang:          'LOG_LANG "{lang}" ist unbekannt, verwende "{fallback}".',
-        missingTexts:         'Für LOG_LANG "{lang}" fehlen Texte (Fallback "{fallback}" wird verwendet): {keys}',
+        timeout:                 'Zeitüberschreitung',
+        noResponse:              'keine Antwort',
+        unreach:                 'Thermostat ist nicht erreichbar (UNREACH), nichts gesendet.',
+        configPending:           'CONFIG_PENDING ist gesetzt (Konfiguration noch nicht übertragen), nichts gesendet.',
+        initFromCcu:             'Startwert aus der Gerätekonfiguration gelesen: Offset {offset} K.',
+        initNoCcuValue:          'Kein Offset-Wert aus der Gerätekonfiguration erhalten.',
+        initReadFailed:          'Offset konnte nicht gelesen werden: {error}',
+        initDryRun:              '[Trockenlauf] Offset unbekannt, würde Offset 0 senden und als Startwert speichern.',
+        initSentZero:            'Offset war unbekannt: Offset 0 gesendet und als Startwert gespeichert.',
+        refInvalid:              'Referenzsensor liefert keinen gültigen Wert, übersprungen.',
+        refTooOld:               'Referenzsensor ist älter als {maxAge} min, übersprungen.',
+        thermostatInvalid:       'Thermostat liefert keine gültigen Werte, übersprungen.',
+        setpointTooLow:          'Solltemperatur {setpoint} °C unter {minSetTemp} °C, nichts zu tun.',
+        changeDeferredWait:      'Referenz {ref} °C, Thermostat {measured} °C, Abweichung {dev} K: Offset {offset} → {to} K wäre fällig, Mindestwartezeit aber noch nicht erreicht.',
+        changeDeferredNoReading: 'Referenz {ref} °C, Thermostat {measured} °C, Abweichung {dev} K: Offset {offset} → {to} K wäre fällig, seit der letzten Änderung kam aber noch kein neuer Messwert.',
+        deviationImplausible:    'Abweichung {dev} K ist unplausibel groß, keine Änderung.',
+        belowHysteresis:         'Referenz {ref} °C, Thermostat {measured} °C, Abweichung {dev} K, unter der Schwelle von {hysteresis} K: Offset bleibt bei {offset} K.',
+        offsetUnchanged:         'Referenz {ref} °C, Thermostat {measured} °C, Abweichung {dev} K: Offset bleibt bei {offset} K (neu berechneter Offset gleich oder Grenze erreicht).',
+        offsetChanged:           'Referenz {ref} °C, Thermostat {measured} °C, Offset {from} → {to} K',
+        offsetChangedDryRun:     '[Trockenlauf] Referenz {ref} °C, Thermostat {measured} °C, Offset {from} → {to} K',
+        processError:            'Fehler: {error}',
+        namesNotUnique:          'Die Namen der Thermostate müssen eindeutig sein.',
+        fieldMissing:            'Im Thermostat-Eintrag "{name}" fehlt das Feld "{field}".',
+        stateDescOffset:         'Zuletzt an das Thermostat gesendeter Temperatur-Offset',
+        stateDescLastChange:     'Zeitpunkt der letzten Offset-Änderung (Unix-Zeit in ms)',
+        startFailed:             'Start fehlgeschlagen: {error}',
+        unknownLang:             'LOG_LANG "{lang}" ist unbekannt, verwende "{fallback}".',
+        missingTexts:            'Für LOG_LANG "{lang}" fehlen Texte (Fallback "{fallback}" wird verwendet): {keys}',
     },
 };
 
@@ -202,7 +202,7 @@ function checkLanguage() {
 
 function logError(text) { if (LOG_ERROR) log(text, 'error'); }
 function logInfo(text) { if (LOG_INFO) log(text, 'info'); }
-function logDebug(text) { if (LOG_DEBUG) log(text, 'debug'); }
+function logDebug(text) { if (LOG_DEBUG) log(text, 'info'); }
 
 function slug(name) {
     return name.replace(/[^A-Za-z0-9_]/g, '_');
@@ -326,17 +326,11 @@ async function processThermostat(t) {
         return;
     }
 
-    // 3. Wait time and fresh reading since the last change
+    // 3. Last change (wait time and fresh reading only block sending, not the evaluation)
     const lastChangeState = await getStateAsync(`${t.stateBase}.lastChange`);
     const lastChange = lastChangeState && typeof lastChangeState.val === 'number' ? lastChangeState.val : 0;
-    if (now - lastChange < MIN_WAIT_MIN * 60000) {
-        logDebug(tag + msg('waitTimeActive'));
-        return;
-    }
-    if (measured.ts <= lastChange) {
-        logDebug(tag + msg('noNewReading'));
-        return;
-    }
+    const waitActive = now - lastChange < MIN_WAIT_MIN * 60000;
+    const noNewReading = measured.ts <= lastChange;
 
     // 4. Evaluate deviation
     const deviation = ref.val - measured.val;
@@ -346,12 +340,17 @@ async function processThermostat(t) {
         return;
     }
     if (Math.abs(deviation) < HYSTERESIS) {
-        logInfo(tag + msg('belowHysteresis', { ...vars, hysteresis: HYSTERESIS }));
+        logDebug(tag + msg('belowHysteresis', { ...vars, hysteresis: HYSTERESIS }));
         return;
     }
     const next = toStep(current + deviation);
     if (next === current) {
-        logInfo(tag + msg('offsetUnchanged', vars));
+        logDebug(tag + msg('offsetUnchanged', vars));
+        return;
+    }
+    // Change would be due, but sending is not allowed yet
+    if (waitActive || noNewReading) {
+        logInfo(tag + msg(waitActive ? 'changeDeferredWait' : 'changeDeferredNoReading', { ...vars, to: next }));
         return;
     }
 
@@ -386,12 +385,10 @@ async function run() {
     }
 }
 
-// Create the state if missing; always update name (English) and description
-// (active language), so existing states follow changes as well
+// Create the state if missing (name in English, description in the active language)
 async function ensureState(id, def) {
     const common = { ...def.common, name: def.name, desc: msg(def.descKey) };
     await createStateAsync(id, common);
-    await extendObjectAsync(id, { common: { name: common.name, desc: common.desc } });
 }
 
 async function ensureStates() {
